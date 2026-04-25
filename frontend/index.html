@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Label Cleansing Tool — Clean segmentation annotations with SAM2">
+    <title>Label Cleansing Tool</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- ─── Dataset Load Modal ─────────────────────────────────── -->
+    <div id="dataset-modal" class="modal-overlay active">
+        <div class="modal-card">
+            <div class="modal-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+            </div>
+            <h1>Label Cleansing Tool</h1>
+            <p class="modal-subtitle">Load a segmentation dataset to begin cleaning annotations</p>
+            <div class="modal-input-group">
+                <label for="dataset-path-input">Dataset Path</label>
+                <input 
+                    type="text" 
+                    id="dataset-path-input" 
+                    placeholder="/path/to/your/dataset"
+                    spellcheck="false"
+                    autocomplete="off"
+                >
+            </div>
+            <button id="load-dataset-btn" class="btn-primary">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+                Load Dataset
+            </button>
+            <div id="load-error" class="modal-error"></div>
+        </div>
+    </div>
+    <div class="modal-overlay hidden" id="fileview-modal" style="z-index: 200;">
+        <div class="modal-card" style="width: 80vw; max-width: 1200px; height: 80vh; display: flex; flex-direction: column; padding: 0; overflow: hidden; background: var(--bg-elevated);">
+            <div class="panel-header" style="border-bottom: 1px solid var(--border); padding: 16px 24px;">
+                <h2 style="font-size: 14px; text-transform: none; color: var(--text-primary);">Annotated Files</h2>
+                <div style="display: flex; gap: 12px;">
+                    <button id="fv-btn-delete" class="btn-primary" style="background: var(--danger); padding: 8px 16px; font-size: 12px; border-radius: var(--radius-sm);" disabled>
+                        Delete Selected
+                    </button>
+                    <button id="fv-btn-close" class="icon-btn" style="background: var(--bg-base); border-radius: var(--radius-sm);">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            
+            <div id="fv-grid-container" style="flex: 1; padding: 16px; overflow-y: auto; position: relative;">
+                <div id="fv-grid" class="file-grid" style="grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));">
+                    <!-- populated dynamically -->
+                </div>
+                <!-- Selection Box -->
+                <div id="fv-selection-box" style="position: absolute; border: 1px solid var(--accent); background: rgba(91, 141, 239, 0.2); display: none; pointer-events: none; z-index: 10;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── Main App Layout ───────────────────────────────────── -->
+    <div id="app" class="app-layout hidden">
+        <!-- Top Toolbar -->
+        <header id="toolbar" class="toolbar">
+            <div class="toolbar-left">
+                <div class="tool-group">
+                    <button id="tool-sam" class="tool-btn active" data-tool="sam" title="SAM Point Tool (click image)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
+                        </svg>
+                        <span>SAM</span>
+                    </button>
+                    <button id="tool-select" class="tool-btn" data-tool="select" title="Select Tool (V)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/>
+                        </svg>
+                        <span>Select</span>
+                    </button>
+                    <button id="tool-edit" class="tool-btn" data-tool="edit" title="Edit Polygon (E)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                        </svg>
+                        <span>Edit</span>
+                    </button>
+                    <button id="btn-fileview" class="tool-btn" title="Open File View">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            <line x1="3" y1="9" x2="21" y2="9"/>
+                            <line x1="9" y1="21" x2="9" y2="9"/>
+                        </svg>
+                        <span>FileView</span>
+                    </button>
+                </div>
+                <div class="toolbar-separator"></div>
+                <div class="tool-group">
+                    <button id="btn-undo" class="tool-btn" title="Undo (Ctrl+Z)" disabled>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="1 4 1 10 7 10"/>
+                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                        </svg>
+                    </button>
+                    <button id="btn-redo" class="tool-btn" title="Redo (Ctrl+Shift+Z)" disabled>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="23 4 23 10 17 10"/>
+                            <path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="toolbar-center">
+                <span id="image-counter" class="image-counter">—</span>
+            </div>
+            <div class="toolbar-right">
+                <button id="btn-save" class="tool-btn save-btn" title="Save (Ctrl+S)">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                        <polyline points="17 21 17 13 7 13 7 21"/>
+                        <polyline points="7 3 7 8 15 8"/>
+                    </svg>
+                    <span>Save</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Canvas Area -->
+            <div id="canvas-container" class="canvas-container">
+                <canvas id="canvas-bg" class="canvas-layer"></canvas>
+                <canvas id="canvas-overlay" class="canvas-layer"></canvas>
+                <!-- Loading spinner for SAM -->
+                <div id="sam-loading" class="sam-loading hidden">
+                    <div class="spinner"></div>
+                    <span>SAM processing...</span>
+                </div>
+                <!-- Toast notifications -->
+                <div id="toast-container" class="toast-container"></div>
+            </div>
+
+            <!-- Right Sidebar -->
+            <aside id="sidebar" class="sidebar">
+                <!-- Class Panel -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>Classes</h2>
+                        <button id="btn-add-class" class="icon-btn" title="Add class">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="12" y1="5" x2="12" y2="19"/>
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div id="class-list" class="class-list">
+                        <!-- Dynamically populated -->
+                    </div>
+                </div>
+
+                <!-- Annotations Panel -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>Annotations</h2>
+                        <span id="annotation-count" class="badge">0</span>
+                    </div>
+                    <div id="annotation-list" class="annotation-list">
+                        <!-- Dynamically populated -->
+                    </div>
+                </div>
+
+                <!-- Image List Panel -->
+                <div class="panel panel-grow">
+                    <div class="panel-header">
+                        <h2>Images</h2>
+                        <span id="image-total" class="badge">0</span>
+                    </div>
+                    <div id="image-list" class="image-list">
+                        <!-- Dynamically populated -->
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <!-- Status Bar -->
+        <footer id="statusbar" class="statusbar">
+            <div class="status-left">
+                <span id="status-tool" class="status-item">Tool: SAM</span>
+                <span class="status-sep">│</span>
+                <span id="status-sam" class="status-item status-loading">SAM: idle</span>
+            </div>
+            <div class="status-center">
+                <span id="status-file" class="status-item">No image loaded</span>
+            </div>
+            <div class="status-right">
+                <span id="status-coords" class="status-item">—</span>
+                <span class="status-sep">│</span>
+                <span id="status-zoom" class="status-item">100%</span>
+                <span class="status-sep">│</span>
+                <span id="status-dirty" class="status-item status-clean">Saved</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/api.js"></script>
+    <script src="js/history.js"></script>
+    <script src="js/canvas.js"></script>
+    <script src="js/polygon.js"></script>
+    <script src="js/sam.js"></script>
+    <script src="js/classes.js"></script>
+    <script src="js/file_view.js"></script>
+    <script src="js/toolbar.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
